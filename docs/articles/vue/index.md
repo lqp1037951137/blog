@@ -1,6 +1,11 @@
 # Hello VitePress
 
 <input type="file" @input="input">
+<button class="btn" @click="startUpload">上传</button>
+
+## 上传进度
+{{ uploadedIndex }} / {{ uploadTotal }} 
+
 
 
 
@@ -13,6 +18,12 @@ let file = null;
 let fileMd5 = "";
 
 export default {
+  data() {
+    return {
+      uploadedIndex: 0,
+      uploadTotal: 0
+    };
+  },
   mounted() {
     console.log(SparkMD5);
   },
@@ -36,10 +47,22 @@ export default {
         let shard = file.slice(start, end);
         shardList.push(shard);
       }
-       await this.upload(shardList[0], 0);
-      // for (let i = 0; i < shardList.length; i++) {
-      //   await this.upload(shardList[i], i);
-      // }
+      this.uploadTotal = shardList.length;
+    },
+    async startUpload(){
+      if(!file) {
+        alert('请选择文件');
+        return;
+      }
+      
+      //  await this.upload(shardList[0], 0);
+      for (let i = 0; i < shardList.length; i++) {
+        await this.upload(shardList[i], i);
+      }
+      //合并
+      axios.post('http://localhost:3000/merge?fileMd5=' + fileMd5 + '&fileName=' + file.name).then(res => {
+        console.log(res);
+      });
     },
     
     /**
@@ -51,6 +74,20 @@ export default {
      */
     upload(shard, index) {
       return new Promise(async (resolve, reject) => {
+        //检测是否已经上传过
+        this.uploadedIndex = index + 1;
+        let res = await axios.get('http://localhost:3000/check', {
+          params: {
+            md5: await this.md5(shard),
+            fileMd5: fileMd5,
+            index: index
+          }
+        });
+        if(res.data.code === 200 && res.data.exist) {
+          resolve(res);
+          return;
+        }
+
         let formData = new FormData();
         formData.append('shard', shard);
         formData.append('index', index);
@@ -64,8 +101,9 @@ export default {
             'Content-Type': 'multipart/form-data'
           },
           onUploadProgress: function (progressEvent) {
-            let percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            console.log(percentCompleted);
+            if (progressEvent.lengthComputable) {
+              console.log(progressEvent.loaded / progressEvent.total * 100 + '%');
+            }
           }
         }).then(res => {
           resolve(res);
@@ -95,3 +133,14 @@ export default {
   }
 };
 </script>
+
+<style>
+.btn {
+  padding: 6px 20px;
+  background-color: #409eff;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+</style>
